@@ -1,0 +1,24 @@
+name: s2s-fire-reproduction
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      # Exact versions used for the publication runs. Pip wheels avoid a
+      # Python-3.10 GDAL/PROJ solver conflict in the current Conda repository.
+      - numpy==2.2.6
+      - pandas==2.3.3
+      - scipy==1.15.2
+      - statsmodels==0.14.6
+      - scikit-learn==1.7.2
+      - matplotlib==3.9.4
+      - geopandas==1.1.1
+      - shapely==2.1.2
+      - pyarrow==22.0.0
+      - duckdb==1.4.3
+      - rasterio==1.4.4
+      - jupyterlab==4.4.10
+      - nbconvert==7.16.6
+      - nbformat==5.10.4
+      - python-docx==1.2.0

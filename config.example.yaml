@@ -1,0 +1,9 @@
+# The notebooks resolve all paths relative to the repository root. No edits are
+# required for the distributed package. These values document publication mode.
+mode: publication
+random_seed: 2025
+spatial_block_m: 250
+fragility_bootstrap_draws: 200
+construction_standardization_refits: 200
+defense_bootstrap_draws: 2000
+ssin_permutation_draws: 1000

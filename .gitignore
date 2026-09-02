@@ -1,0 +1,31 @@
+.DS_Store
+.env
+__pycache__/
+.ipynb_checkpoints/
+.matplotlib/
+*.py[cod]
+.gitkeep
+
+# Frozen inputs and generated outputs are distributed separately or rebuilt.
+/data/
+/figures/
+/results/
+
+# Generated tables, documents and graphics should not enter the code repo.
+*.csv
+*.json
+*.html
+*.txt
+*.docx
+*.pdf
+*.png
+*.parquet
+*.gpkg
+*.tif
+*.tiff
+*.pkl
+*.pickle
+*.feather
+
+# Local scratch space.
+/tmp/
