@@ -22,34 +22,61 @@ PALE = "#F1F1EE"
 PALE_RED = "#F3E4DF"
 
 
-def plot_defense_locations(project_root: Path, matched, output_dir: Path):
+def plot_defense_locations(project_root: Path, matched, output_dir: Path, *,
+                           analysis_path: Path | None = None,
+                           building_cache: Path | None = None):
     """Map all documented defense targets and the matched analytical subset."""
     apply_style()
     project_root = Path(project_root)
     data = project_root / "data"
-    dins = pd.read_parquet(
-        data / "enrichment" / "dins.parquet",
-        columns=["BLD_ID", "is_defended"],
-    )
-    defended_ids = set(
-        dins.loc[dins.is_defended.eq(True), "BLD_ID"].astype(str)
-    )
-    matched_ids = set(
-        matched.loc[matched.defended.eq(1), "BLD_ID"].astype(str)
-    )
+    use_openview = analysis_path is not None and building_cache is not None
+    if use_openview:
+        analysis = pd.read_parquet(
+            analysis_path, columns=["graph_id", "fire", "defended"],
+        )
+        defended_ids = set(
+            analysis.loc[analysis.defended.eq(True), "graph_id"].astype(int)
+        )
+        matched_ids = set(
+            matched.loc[matched.defended.eq(1), "graph_id"].astype(int)
+        )
+        all_buildings = gpd.read_parquet(
+            building_cache, columns=["building_id", "geometry"],
+        ).rename(columns={"building_id": "graph_id"})
+    else:
+        dins = pd.read_parquet(
+            data / "enrichment" / "dins.parquet",
+            columns=["BLD_ID", "is_defended"],
+        )
+        defended_ids = set(
+            dins.loc[dins.is_defended.eq(True), "BLD_ID"].astype(str)
+        )
+        matched_ids = set(
+            matched.loc[matched.defended.eq(1), "BLD_ID"].astype(str)
+        )
     perimeters = gpd.read_parquet(data / "nx" / "fire_perims.parquet")
     perimeters = perimeters.set_index("FIRE_NAME")
 
     fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.55))
     summaries = []
     for panel, (ax, fire) in enumerate(zip(axes, ["EATON", "PALISADES"])):
-        buildings = gpd.read_parquet(
-            data / "nx" / f"{fire}_buildings.parquet",
-            columns=["BLD_ID", "geometry"],
-        )
-        buildings["BLD_ID"] = buildings.BLD_ID.astype(str)
-        is_defended = buildings.BLD_ID.isin(defended_ids)
-        is_matched = buildings.BLD_ID.isin(matched_ids)
+        if use_openview:
+            fire_ids = set(
+                analysis.loc[analysis.fire.eq(fire), "graph_id"].astype(int)
+            )
+            buildings = all_buildings[
+                all_buildings.graph_id.isin(fire_ids)
+            ].drop_duplicates("graph_id")
+            identifier = buildings.graph_id
+        else:
+            buildings = gpd.read_parquet(
+                data / "nx" / f"{fire}_buildings.parquet",
+                columns=["BLD_ID", "geometry"],
+            )
+            buildings["BLD_ID"] = buildings.BLD_ID.astype(str)
+            identifier = buildings.BLD_ID
+        is_defended = identifier.isin(defended_ids)
+        is_matched = identifier.isin(matched_ids)
         background = buildings[~is_defended]
         unmatched_targets = buildings[is_defended & ~is_matched]
         matched_targets = buildings[is_matched]

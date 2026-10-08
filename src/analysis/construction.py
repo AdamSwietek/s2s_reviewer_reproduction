@@ -102,11 +102,16 @@ def prepare_construction_samples(analysis: pd.DataFrame) -> ConstructionSamples:
 
 def fit_clustered_logit(data: pd.DataFrame, formula: str):
     """Fit logistic regression with approximately 250-m cluster inference."""
-    return smf.logit(formula, data=data).fit(
+    model = smf.logit(formula, data=data, missing="drop")
+    # Patsy may remove rows with a missing model covariate.  Cluster labels
+    # must follow the retained design-matrix rows rather than the unfiltered
+    # input frame or statsmodels receives vectors of different lengths.
+    groups = data.loc[model.data.row_labels, "grid_id"]
+    return model.fit(
         disp=0,
         maxiter=500,
         cov_type="cluster",
-        cov_kwds={"groups": data.grid_id},
+        cov_kwds={"groups": groups},
     )
 
 
@@ -129,6 +134,91 @@ def tolerance_ratio(model, term: str,
         "ci_hi": float(np.exp(log_ratio + 1.96 * standard_error_log_ratio)),
         "p_value": float(model.pvalues[term]),
     }
+
+
+def probability_statement(model, term: str, *, step: float = 1.0,
+                          baseline: float | None = None, label: str | None = None,
+                          draws: int = 2000, seed: int = 0) -> dict:
+    """Translate one logit coefficient into a statement about probability.
+
+    A logit coefficient is a change in log-odds, which has no fixed meaning in
+    probability until a reference is named. Two references are supported:
+
+    ``baseline`` given
+        Apply the coefficient to that reference probability. Exact algebra,
+        and a statement about a hypothetical structure, not about the sample.
+    ``baseline`` omitted (default)
+        Predict every estimation row as observed and again with ``term``
+        shifted, and report the average change in predicted probability. This
+        respects the covariate distribution and is the sample-level answer.
+
+    A term whose column holds only zeros and ones is treated as a contrast
+    between its two levels rather than shifted by ``step``, so indicator terms
+    such as a tile roof read as present versus absent.
+
+    Intervals are simulated on the coefficient vector using the model's own
+    covariance, so a cluster-robust fit yields a cluster-robust interval.
+    """
+    names = list(model.model.exog_names)
+    if term not in names:
+        raise KeyError(f"{term!r} is not a term of this model: {names}")
+    index = names.index(term)
+    parameters = np.asarray(model.params, float)
+    covariance = np.asarray(model.cov_params(), float)
+    generator = np.random.default_rng(seed)
+    sampled = generator.multivariate_normal(parameters, covariance, size=draws)
+
+    if baseline is not None:
+        if not 0 < baseline < 1:
+            raise ValueError("baseline must be a probability in (0, 1)")
+        shift = parameters[index] * step
+        shifted = sampled[:, index] * step
+        reference = np.full(draws, baseline)
+        comparison = _expit(np.log(baseline / (1 - baseline)) + shifted)
+        point_reference, point_comparison = baseline, float(
+            _expit(np.log(baseline / (1 - baseline)) + shift))
+        reference_label = f"a structure at P = {baseline:.2f}"
+    else:
+        exog = np.asarray(model.model.exog, float)
+        column = exog[:, index]
+        low, high = exog.copy(), exog.copy()
+        if set(np.unique(column)).issubset({0.0, 1.0}):
+            low[:, index], high[:, index] = 0.0, 1.0
+        else:
+            high[:, index] = column + step
+        point_reference = float(_expit(low @ parameters).mean())
+        point_comparison = float(_expit(high @ parameters).mean())
+        reference = _expit(sampled @ low.T).mean(axis=1)
+        comparison = _expit(sampled @ high.T).mean(axis=1)
+        reference_label = f"the estimation sample (n = {int(model.nobs):,})"
+
+    difference = comparison - reference
+    low_ci, high_ci = np.percentile(difference, [2.5, 97.5])
+    point_difference = point_comparison - point_reference
+    name = label or term
+    return {
+        "term": term,
+        "label": name,
+        "coefficient": float(parameters[index]),
+        "odds_ratio": float(np.exp(parameters[index] * step)),
+        "reference_probability": point_reference,
+        "comparison_probability": point_comparison,
+        "difference": point_difference,
+        "ci_lo": float(low_ci),
+        "ci_hi": float(high_ci),
+        "reference": reference_label,
+        "sentence": (
+            f"{name}: {100 * point_reference:.1f}% to "
+            f"{100 * point_comparison:.1f}% predicted probability across "
+            f"{reference_label}, a change of {100 * point_difference:+.1f} "
+            f"percentage points (95% CI {100 * low_ci:+.1f} to "
+            f"{100 * high_ci:+.1f})"
+        ),
+    }
+
+
+def _expit(values):
+    return 1 / (1 + np.exp(-np.asarray(values, float)))
 
 
 def _selected_coefficients(model, model_name: str,

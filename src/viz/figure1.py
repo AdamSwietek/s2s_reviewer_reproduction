@@ -26,7 +26,8 @@ def _save(fig, output_dir: Path, stem: str) -> None:
 
 
 def plot_fragility(data: pd.DataFrame, fits: dict, output_dir: Path,
-                   source_dir: Path):
+                   source_dir: Path, *, panel_label="g",
+                   stem="fig1c_fragility"):
     """Plot fire-specific destruction fragility curves and empirical bins."""
     exposed = data[data.exposed.eq(1)]
     x_min = 1e-4
@@ -79,20 +80,23 @@ def plot_fragility(data: pd.DataFrame, fits: dict, output_dir: Path,
     ax.set_ylabel("Probability of destruction")
     # Half-width panels are reduced to about 79% during assembly.  Explicit
     # sizing keeps their final panel headings aligned with panels a-e.
-    ax.set_title("g  Structural fragility", loc="left", fontweight="bold",
+    ax.set_title(f"{panel_label}  Structural fragility", loc="left",
+                 fontweight="bold",
                  fontsize=10.2)
     ax.legend(loc="upper left")
     fig.tight_layout()
-    _save(fig, output_dir, "fig1c_fragility")
+    _save(fig, output_dir, stem)
     pd.DataFrame(source_rows).to_csv(
-        Path(source_dir) / "fig1c_fragility_source.csv", index=False
+        Path(source_dir) / f"{stem}_source.csv", index=False
     )
     return fig
 
 
 def plot_partial_damage(data: pd.DataFrame, destroyed_fits: dict,
                         any_damage_fits: dict, peak_summary: pd.DataFrame,
-                        output_dir: Path, source_dir: Path):
+                        output_dir: Path, source_dir: Path, *,
+                        panel_label="h",
+                        stem="fig1d_partial_damage"):
     """Plot fitted and empirical partial-damage probability by exposure."""
     exposed = data[data.exposed.eq(1)]
     x_min = 1e-4
@@ -103,9 +107,11 @@ def plot_partial_damage(data: pd.DataFrame, destroyed_fits: dict,
     for fire in FIRES:
         subset = exposed[exposed.fire.eq(fire)]
         grid = np.geomspace(x_min, x_max, 400)
-        probability = (
+        probability = np.clip(
             logistic_5pl(grid, *any_damage_fits[fire]["parameters"])
-            - logistic_5pl(grid, *destroyed_fits[fire]["parameters"])
+            - logistic_5pl(grid, *destroyed_fits[fire]["parameters"]),
+            0,
+            1,
         )
         peak = peak_summary[peak_summary.fire.eq(fire)].iloc[0]
         ax.plot(grid, probability, color=FIRE_COLORS[fire], lw=2.2,
@@ -144,19 +150,21 @@ def plot_partial_damage(data: pd.DataFrame, destroyed_fits: dict,
     ax.grid(True, axis="y", color="#E8E8E8", lw=.45)
     ax.set_xlabel(r"Realized geometric coupling, $F^*$")
     ax.set_ylabel("Probability of partial damage")
-    ax.set_title("h  Damage without total destruction", loc="left",
+    ax.set_title(f"{panel_label}  Damage without total destruction", loc="left",
                  fontweight="bold", fontsize=10.2)
     ax.legend(loc="upper left")
     fig.tight_layout()
-    _save(fig, output_dir, "fig1d_partial_damage")
+    _save(fig, output_dir, stem)
     pd.DataFrame(source_rows).to_csv(
-        Path(source_dir) / "fig1d_partial_damage_source.csv", index=False
+        Path(source_dir) / f"{stem}_source.csv", index=False
     )
     return fig
 
 
 def plot_distance_comparison(summaries: dict, output_dir: Path,
-                             source_dir: Path):
+                             source_dir: Path, *,
+                             panel_labels=("e", "f"),
+                             stem="fig1b_distance_comparison"):
     """Plot realized exposure against CCD and surface-to-surface distance."""
     settings = {
         "ccd_ft": {
@@ -221,7 +229,7 @@ def plot_distance_comparison(summaries: dict, output_dir: Path,
         ax.yaxis.set_major_formatter(LogFormatterMathtext())
         log_grid(ax)
         ax.set_xlabel(config["label"])
-        ax.set_title(f"{'ef'[panel]}  {config['title']}", loc="left",
+        ax.set_title(f"{panel_labels[panel]}  {config['title']}", loc="left",
                      fontweight="bold", fontsize=8.2)
         ax.text(.97, .95, f"{ratio:.2f}× outcome gap",
                 transform=ax.transAxes, ha="right", va="top", fontsize=7.2)
@@ -237,8 +245,8 @@ def plot_distance_comparison(summaries: dict, output_dir: Path,
     fig.legend(handles=handles, loc="lower center", ncol=2,
                bbox_to_anchor=(.5, -.005))
     fig.subplots_adjust(left=.10, right=.99, top=.91, bottom=.23, wspace=.08)
-    _save(fig, output_dir, "fig1b_distance_comparison")
+    _save(fig, output_dir, stem)
     pd.DataFrame(source_rows).to_csv(
-        Path(source_dir) / "fig1b_distance_comparison_source.csv", index=False
+        Path(source_dir) / f"{stem}_source.csv", index=False
     )
     return fig

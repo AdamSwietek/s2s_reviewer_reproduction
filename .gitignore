@@ -7,9 +7,12 @@ __pycache__/
 .gitkeep
 
 # Frozen inputs and generated outputs are distributed separately or rebuilt.
-/data/
+/data/*
+!/data/README.md
+!/data/.gitkeep
 /figures/
 /results/
+/outputs/
 
 # Generated tables, documents and graphics should not enter the code repo.
 *.csv
@@ -29,3 +32,48 @@ __pycache__/
 
 # Local scratch space.
 /tmp/
+
+# Working material that is not part of the public reproduction package.
+/paper/
+/figures_archive/
+/notebooks/
+/config.example.yaml
+/s2s_nc/notebooks_v1_prenf/
+/s2s_nc/notebooks_v2_nf_nopads/
+/s2s_nc/notebooks/.matplotlib/
+
+# Superseded preparation and exploratory helpers retained only in local worktrees.
+/scripts/analyze_height_sampling_distribution.py
+/scripts/build_data_dictionary.py
+/scripts/build_eaton_progression_sensitivity.py
+/scripts/build_eaton_scene_2d.py
+/scripts/build_output_manifest.py
+/scripts/build_package_inputs.py
+/scripts/build_table2_defense_docx.py
+/scripts/build_upfire_neighbor_counts.py
+/scripts/fig1_composite.py
+/scripts/fig_eaton_arrival_steps.py
+/scripts/run_all.py
+/scripts/validate_package.py
+/src/analysis/arrival_reconstruction.py
+/src/analysis/construction_sensitivity.py
+/src/analysis/fij_comparison.py
+/src/analysis/fragility_sensitivity.py
+/src/analysis/neighborhood.py
+/src/analysis/population_audit.py
+/src/analysis/population_scene_arrival.py
+/src/analysis/progression_sensitivity.py
+/src/analysis/sen_selection.py
+/src/analysis/sen_sensitivity.py
+/src/viz/altadena_methods.py
+/src/viz/arrival_reconstruction.py
+/src/viz/construction_sensitivity.py
+/src/viz/defense_sensitivity.py
+/src/viz/extended_data.py
+/src/viz/fragility_sensitivity.py
+/src/viz/population_scene_arrival.py
+/src/viz/progression_sensitivity.py
+/src/viz/sen_sensitivity.py
+
+# The public input manifest is code-adjacent documentation, not generated data.
+!data_manifest.csv

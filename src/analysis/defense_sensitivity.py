@@ -19,12 +19,15 @@ def add_pair_spatial_context(project_root: Path, focal: pd.DataFrame,
                              block_m: float = 250,
                              isolation_m: float = 150) -> pd.DataFrame:
     """Attach treated-focal spatial blocks and defense-isolation distances."""
-    coordinates = pd.read_parquet(
-        Path(project_root) / "data" / "radex.parquet",
-        columns=["BLD_ID", "lon_wgs84", "lat_wgs84"],
-    ).drop_duplicates("BLD_ID")
-    coordinates["BLD_ID"] = coordinates.BLD_ID.astype(str)
-    reference = focal.merge(coordinates, on="BLD_ID", how="left")
+    if {"lon_wgs84", "lat_wgs84"}.issubset(focal.columns):
+        reference = focal.copy()
+    else:
+        coordinates = pd.read_parquet(
+            Path(project_root) / "data" / "radex.parquet",
+            columns=["BLD_ID", "lon_wgs84", "lat_wgs84"],
+        ).drop_duplicates("BLD_ID")
+        coordinates["BLD_ID"] = coordinates.BLD_ID.astype(str)
+        reference = focal.merge(coordinates, on="BLD_ID", how="left")
     transformer = Transformer.from_crs(4326, 26911, always_xy=True)
     x, y = transformer.transform(
         reference.lon_wgs84.to_numpy(), reference.lat_wgs84.to_numpy()
@@ -240,7 +243,7 @@ def upfire_exposure_quantile_sensitivity(
 
 def design_sensitivity(project_root: Path, primary_focal: pd.DataFrame,
                        cache_dir: Path, n_boot: int = 1000,
-                       seed: int = 0) -> pd.DataFrame:
+                       seed: int = 0, focal_builder=None) -> pd.DataFrame:
     """Vary the arrival window and neighbor radius, rematching every design."""
     specs = [
         ("Arrival window: 1.5 h", 1.5, 100),
@@ -261,10 +264,16 @@ def design_sensitivity(project_root: Path, primary_focal: pd.DataFrame,
             if cache.exists():
                 focal = pd.read_parquet(cache)
             else:
-                focal = build_focal_table(
-                    project_root, max_abs_dt_hours=hours,
-                    neighbor_radius_m=radius_ft * 0.3048,
-                )
+                if focal_builder is None:
+                    focal = build_focal_table(
+                        project_root, max_abs_dt_hours=hours,
+                        neighbor_radius_m=radius_ft * 0.3048,
+                    )
+                else:
+                    focal = focal_builder(
+                        max_abs_dt_hours=hours,
+                        neighbor_radius_m=radius_ft * 0.3048,
+                    )
                 focal.to_parquet(cache, index=False)
         eligible, matched, _ = prepare_spillover_match(focal, threshold=.75)
         result, _, _ = spillover_table(

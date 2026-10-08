@@ -6,8 +6,11 @@ import matplotlib.pyplot as plt
 
 FIRE_COLORS = {"EATON": "#C24D32", "PALISADES": "#2E5B82"}
 FIRE_MARKERS = {"EATON": "o", "PALISADES": "s"}
-WUI_INTERFACE_COLOR = "#C51B7D"
-WUI_INFLUENCE_COLOR = "#D95F02"
+# WUI palette shared with the statewide/regional community figure.
+WUI_INFLUENCE_COLOR = "#D5A23E"
+WUI_INTERMIX_COLOR = "#6F9B8A"
+WUI_INTERFACE_COLOR = "#3B78A3"
+WUI_EXTENSION_COLOR = "#B24C63"
 FIRE_PERIMETER_COLOR = "#222222"
 
 

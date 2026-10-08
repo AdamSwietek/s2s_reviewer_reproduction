@@ -5,8 +5,10 @@ from pathlib import Path
 import tempfile
 
 import duckdb
+import geopandas as gpd
 import numpy as np
 import pandas as pd
+import shapely
 import statsmodels.formula.api as smf
 from scipy.spatial import cKDTree
 
@@ -18,6 +20,263 @@ IV_COVARIATES = [
     "n_destroyed_bldgs", "l_n_neighbors_500ft",
     "wind_speed_arrival_mph", "arrival", "elevation", "ndvi_mean",
 ]
+
+
+def _openview_nodes(project_root: Path, analysis_path: Path,
+                    clock: str = "T_arrival_hrs") -> pd.DataFrame:
+    """Join current OpenView outcomes/exposure to legacy timing covariates."""
+    analysis = pd.read_parquet(analysis_path).copy()
+    required = {
+        "graph_id", "BLD_ID", "fire", "outcome", "is_destroyed",
+        "any_damage", "defended", "F_total_wmean", "F_destroyed_wmean",
+        "n_destroyed_bldgs", "ndvi_mean", "lon_wgs84", "lat_wgs84",
+    }
+    missing = required.difference(analysis.columns)
+    if missing:
+        raise ValueError(f"OpenView analysis is missing columns: {sorted(missing)}")
+    if not analysis.graph_id.is_unique:
+        raise ValueError("OpenView analysis must contain one row per graph_id")
+    analysis["graph_id"] = analysis.graph_id.astype(np.int64)
+    analysis["BLD_ID"] = analysis.BLD_ID.astype(str)
+
+    timing = pd.read_parquet(
+        Path(project_root) / "data" / "radex.parquet",
+        columns=[
+            "BLD_ID", "fire", clock, "wind_speed_arrival_mph", "elevation",
+            "n_neighbors_500ft",
+        ],
+    )
+    timing["BLD_ID"] = timing.BLD_ID.astype(str)
+    timing = timing.drop_duplicates(["BLD_ID", "fire"])
+    nodes = analysis.merge(
+        timing, on=["BLD_ID", "fire"], how="left", validate="one_to_one",
+    )
+    nodes["arrival"] = nodes[clock]
+    nodes["defended"] = nodes.defended.fillna(False).astype(int)
+    nodes["destroyed"] = nodes.is_destroyed.astype(int)
+    nodes["survived"] = 1 - nodes.destroyed
+    nodes["outcome3"] = nodes.outcome.map({
+        "no_damage": "Undamaged", "partial": "Partial",
+        "destroyed": "Destroyed",
+    })
+    return nodes
+
+
+def _openview_directed_edges(
+    run_dir: Path,
+    analysis: pd.DataFrame,
+    building_cache: Path,
+    cache_path: Path,
+    *,
+    rebuild: bool = False,
+) -> pd.DataFrame:
+    """Return assessed OpenView edges in both receiver directions.
+
+    The building-edge output supplies directional view factors but not a pair
+    distance.  The latter is calculated as the planar footprint-to-footprint
+    separation from the same OpenView geometry cache and stored with the
+    directed edge cache.
+    """
+    cache_path = Path(cache_path)
+    if cache_path.exists() and not rebuild:
+        return pd.read_parquet(cache_path)
+
+    ids = analysis[["graph_id"]].drop_duplicates().copy()
+    ids["graph_id"] = ids.graph_id.astype(np.int64)
+    edge_path = str(Path(run_dir) / "building_edges.parquet").replace("'", "''")
+    con = duckdb.connect()
+    con.execute("SET threads=4")
+    con.execute("SET memory_limit='8GB'")
+    con.register("assessed_ids", ids)
+    try:
+        undirected = con.execute(f"""
+            SELECT e.building_i, e.building_j,
+                   e.vf_i_to_j, e.vf_j_to_i
+            FROM read_parquet('{edge_path}') e
+            INNER JOIN assessed_ids i ON e.building_i = i.graph_id
+            INNER JOIN assessed_ids j ON e.building_j = j.graph_id
+        """).fetchdf()
+    finally:
+        con.unregister("assessed_ids")
+        con.close()
+
+    geometry = gpd.read_parquet(
+        building_cache, columns=["building_id", "geometry"],
+    ).rename(columns={"building_id": "graph_id"})
+    geometry = geometry[geometry.graph_id.isin(ids.graph_id)].drop_duplicates(
+        "graph_id"
+    )
+    geometry_map = geometry.set_index("graph_id").geometry.to_dict()
+    left = np.asarray(undirected.building_i.map(geometry_map), dtype=object)
+    right = np.asarray(undirected.building_j.map(geometry_map), dtype=object)
+    undirected["distance_m"] = shapely.distance(left, right)
+    forward = undirected.rename(columns={
+        "building_i": "focal_graph_id", "building_j": "neighbor_graph_id",
+        "vf_i_to_j": "vf",
+    })[["focal_graph_id", "neighbor_graph_id", "vf", "distance_m"]]
+    reverse = undirected.rename(columns={
+        "building_j": "focal_graph_id", "building_i": "neighbor_graph_id",
+        "vf_j_to_i": "vf",
+    })[["focal_graph_id", "neighbor_graph_id", "vf", "distance_m"]]
+    directed = pd.concat([forward, reverse], ignore_index=True)
+    directed = directed[
+        directed.vf.gt(0) & directed.distance_m.notna()
+    ].reset_index(drop=True)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    directed.to_parquet(cache_path, index=False)
+    return directed
+
+
+def build_openview_focal_table(
+    project_root: Path,
+    run_dir: Path,
+    analysis_path: Path,
+    building_cache: Path,
+    edge_cache: Path,
+    clock: str = "T_arrival_hrs",
+    max_abs_dt_hours: float = 3.0,
+    neighbor_radius_m: float = M100,
+    *,
+    rebuild_edges: bool = False,
+) -> pd.DataFrame:
+    """Build the directional defense population from the OpenView 3D graph."""
+    if max_abs_dt_hours <= 0 or neighbor_radius_m <= 0:
+        raise ValueError("Arrival window and neighbor radius must be positive")
+    nodes = _openview_nodes(project_root, analysis_path, clock=clock)
+    edges = _openview_directed_edges(
+        run_dir, nodes, building_cache, edge_cache, rebuild=rebuild_edges,
+    )
+    focal_map = nodes[["graph_id", "fire", "arrival"]].rename(columns={
+        "graph_id": "focal_graph_id", "arrival": "focal_arrival",
+    })
+    neighbor_map = nodes[[
+        "graph_id", "fire", "arrival", "destroyed", "any_damage", "defended",
+    ]].rename(columns={
+        "graph_id": "neighbor_graph_id", "fire": "neighbor_fire",
+        "arrival": "neighbor_arrival", "destroyed": "neighbor_destroyed",
+        "any_damage": "neighbor_any_damage", "defended": "neighbor_defended",
+    })
+    timed = (
+        edges.merge(focal_map, on="focal_graph_id", validate="many_to_one")
+        .merge(neighbor_map, on="neighbor_graph_id", validate="many_to_one")
+    )
+    timed = timed[
+        timed.fire.eq(timed.neighbor_fire)
+        & timed.focal_arrival.notna() & timed.neighbor_arrival.notna()
+    ].copy()
+    timed["dt"] = timed.neighbor_arrival - timed.focal_arrival
+    timed = timed[timed.dt.abs().le(float(max_abs_dt_hours)) & timed.dt.ne(0)]
+
+    sides = timed.assign(up=timed.dt.lt(0), down=timed.dt.gt(0)).groupby(
+        "focal_graph_id"
+    )[["up", "down"]].sum()
+    eligible = sides[sides.up.gt(0) & sides.down.gt(0)].index
+    timed = timed[timed.focal_graph_id.isin(eligible)]
+    up_share = (
+        timed[timed.dt.lt(0)].groupby("focal_graph_id")
+        .neighbor_destroyed.mean().rename("up_share")
+    )
+    up_coupling = (
+        timed[timed.dt.lt(0)].groupby("focal_graph_id").vf.sum()
+        .rename("F_upfire_wmean")
+    )
+    outcome_edges = timed[
+        timed.neighbor_defended.eq(0)
+        & timed.distance_m.le(float(neighbor_radius_m))
+    ]
+    down = outcome_edges[outcome_edges.dt.gt(0)].groupby("focal_graph_id").agg(
+        down100=("neighbor_destroyed", "mean"),
+        down100_any_damage=("neighbor_any_damage", "mean"),
+        n_down100=("neighbor_destroyed", "size"),
+        n_down100_assessed=("neighbor_any_damage", "count"),
+    )
+    up = outcome_edges[outcome_edges.dt.lt(0)].groupby("focal_graph_id").agg(
+        up100=("neighbor_destroyed", "mean"),
+        up100_any_damage=("neighbor_any_damage", "mean"),
+        n_up100=("neighbor_destroyed", "size"),
+        n_up100_assessed=("neighbor_any_damage", "count"),
+    )
+    damaged = outcome_edges[outcome_edges.neighbor_any_damage.eq(1)]
+    down_escalation = (
+        damaged[damaged.dt.gt(0)].groupby("focal_graph_id")
+        .neighbor_destroyed.agg([
+            ("down100_escalation", "mean"), ("n_down100_damaged", "size")
+        ])
+    )
+    up_escalation = (
+        damaged[damaged.dt.lt(0)].groupby("focal_graph_id")
+        .neighbor_destroyed.agg([
+            ("up100_escalation", "mean"), ("n_up100_damaged", "size")
+        ])
+    )
+    directional = pd.concat([
+        up_share, up_coupling, down, up, down_escalation, up_escalation,
+    ], axis=1).reset_index()
+    frame = directional.merge(
+        nodes, left_on="focal_graph_id", right_on="graph_id",
+        validate="one_to_one",
+    )
+    for column in ["F_upfire_wmean", "F_total_wmean", "n_neighbors_500ft"]:
+        frame[f"l_{column}"] = np.log1p(frame[column])
+    return frame.dropna(
+        subset=IV_COVARIATES + ["defended", "outcome3"]
+    ).reset_index(drop=True)
+
+
+def build_openview_view_decomposition(
+    project_root: Path,
+    run_dir: Path,
+    analysis_path: Path,
+    building_cache: Path,
+    edge_cache: Path,
+    focal: pd.DataFrame,
+    clock: str = "T_arrival_hrs",
+    max_abs_dt_hours: float = 3.0,
+) -> pd.DataFrame:
+    """Decompose focal view using directional OpenView building coupling."""
+    nodes = _openview_nodes(project_root, analysis_path, clock=clock)
+    edges = _openview_directed_edges(
+        run_dir, nodes, building_cache, edge_cache, rebuild=False,
+    )
+    source = nodes[["graph_id", "fire", "arrival"]].rename(columns={
+        "graph_id": "focal_graph_id", "arrival": "focal_arrival",
+    })
+    target = nodes[["graph_id", "fire", "arrival", "defended", "destroyed"]].rename(
+        columns={
+            "graph_id": "neighbor_graph_id", "fire": "neighbor_fire",
+            "arrival": "neighbor_arrival", "defended": "neighbor_defended",
+            "destroyed": "neighbor_destroyed",
+        }
+    )
+    directed = (
+        edges.merge(source, on="focal_graph_id", validate="many_to_one")
+        .merge(target, on="neighbor_graph_id", validate="many_to_one")
+    )
+    directed = directed[
+        directed.fire.eq(directed.neighbor_fire)
+        & directed.focal_arrival.notna() & directed.neighbor_arrival.notna()
+    ].copy()
+    directed["dt"] = directed.neighbor_arrival - directed.focal_arrival
+    directed = directed[
+        directed.dt.abs().le(float(max_abs_dt_hours)) & directed.dt.ne(0)
+    ]
+    directed["F_up_potential"] = directed.vf.where(directed.dt.lt(0), 0)
+    directed["F_down_potential"] = directed.vf.where(directed.dt.gt(0), 0)
+    directed["F_up_defended"] = directed.vf.where(
+        directed.dt.lt(0) & directed.neighbor_defended.eq(1), 0,
+    )
+    directed["F_down_defended"] = directed.vf.where(
+        directed.dt.gt(0) & directed.neighbor_defended.eq(1), 0,
+    )
+    directed["F_up_destroyed"] = directed.vf.where(
+        directed.dt.lt(0) & directed.neighbor_destroyed.eq(1), 0,
+    )
+    columns = [
+        "F_up_potential", "F_down_potential", "F_up_defended",
+        "F_down_defended", "F_up_destroyed",
+    ]
+    decomposition = directed.groupby("focal_graph_id")[columns].sum().reset_index()
+    return focal.merge(decomposition, on="focal_graph_id", how="left")
 
 
 def build_focal_table(project_root: Path, clock: str = "T_arrival_hrs",

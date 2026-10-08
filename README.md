@@ -1,56 +1,109 @@
-# Structure-to-Structure Coupling and Urban Conflagration Risk
+# Structure-to-Structure Connectivity and Urban Wildfire Risk
 
-Post-line-of-sight reproduction package 
-manuscript by Adam Swietek. The package regenerates the reported statistical
-analyses, tables and figures from frozen building-level and directed
-building-pair products for the 2025 Eaton and Palisades fires.
+This repository reproduces the analyses, tables and figures reported in the
+manuscript from frozen post-ray-tracing building and coupling products for the
+2025 Eaton and Palisades fires and the California statewide extension.
 
-## Scope
+The reproduction begins after LiDAR processing, three-dimensional scene
+construction, surface sampling and ray tracing. Those computationally intensive
+upstream steps and their proprietary source data are outside the scope of this
+package.
 
-The standard workflow starts **after** the high-compute reconstruction of
-terrain/building meshes, surface patches and patch-level lines of sight. It
-does not require LARIAC source files, proprietary meshes or the original
-2.8-GB patch-level LOS tables. The separately distributed compact pair tables retain one
-row per directed visible building pair and reproduce the defense and SEN
-analyses exactly.
+## Repository contents
 
-## Install
+- `s2s_nc/notebooks/` contains the seven canonical analysis notebooks.
+- `src/analysis/` contains reusable statistical and network-analysis code.
+- `src/viz/` contains the figure-building code.
+- `scripts/` contains data validation and notebook-execution utilities.
+- `data/` is populated from the separately distributed Dropbox bundle.
+- `results/` and `figures/` are generated locally and are not tracked by Git.
 
-Publication analyses were developed with Python 3.10.18. The clean-room test
-used Python 3.10.20 on macOS; a recent Linux system should also work.
+## Installation
+
+The publication analyses were developed with Python 3.10. Create the pinned
+environment with:
 
 ```bash
 conda env create -f environment.yml
 conda activate s2s-fire-reproduction
-python scripts/validate_package.py
+python -m ipykernel install --user --name s2s-fire-reproduction \
+  --display-name "S2S fire reproduction"
 ```
 
 ## Obtain the data
 
-The frozen post-LOS inputs are hosted separately in the
-[reviewer data folder on Dropbox](https://www.dropbox.com/scl/fo/yvqj2aku2f2qhld70dyvh/AIZWOsbXFX0_8aAU-8MsElo?rlkey=g5ng7brlr1do807ti17e676q5&dl=0)
-and are not stored in this GitHub repository. Download the folder contents and
-place them under `data/`, preserving the supplied directory structure. A
-correct installation will contain `data/analysis.parquet`,
-`data/radex.parquet` and `data/pairs/`. Then run
-`python scripts/validate_package.py` to verify file checksums and schemas.
+The frozen inputs are distributed separately through the
+[S2S reviewer data folder on Dropbox](https://www.dropbox.com/scl/fo/yvqj2aku2f2qhld70dyvh/AIZWOsbXFX0_8aAU-8MsElo?rlkey=g5ng7brlr1do807ti17e676q5&dl=0).
 
+Download and extract the bundle into `data/`, preserving its directory
+structure. The download can also be initiated from the command line:
 
+```bash
+python scripts/download_data.py
+python scripts/validate_code_release.py
+python scripts/validate_s2s_data.py
+```
 
+The archive checksum will be added to the release record when the final data
+bundle is frozen. Until then, `download_data.py` prints a warning when run
+without an expected SHA-256 digest.
+
+Large data may be stored outside the repository:
+
+```bash
+export S2S_DATA_DIR=/path/to/s2s_nc_data
+python scripts/validate_s2s_data.py
+```
+
+Individual source groups can also be overridden with `S2S_REFERENCE_DIR`,
+`OPENVIEW_3D_BVF_DIR`, `OPENVIEW_3D_PATCH_DIR`,
+`OPENVIEW_FIRE_2D_SEG2M_DIR`, and `OPENVIEW_CA_2D_BVF_DIR`.
 
 ## Notebook order
 
-1. `00_population_and_data_audit.ipynb`
-2. `01_geometric_coupling_and_fragility.ipynb`
-3. `02_construction_attributes.ipynb`
-4. `03_defensive_actions.ipynb`
-5. `04_structure_exposure_networks.ipynb`
-6. `05_regional_sen_extent.ipynb`
-7. `extended_data/ED01_population_scene_and_arrival.ipynb`
-8. `extended_data/ED02_fragility_sensitivity.ipynb`
-9. `extended_data/ED03_construction_sensitivity.ipynb`
-10. `extended_data/ED04_defense_sensitivity.ipynb`
-11. `extended_data/ED05_sen_sensitivity.ipynb`
+1. `s2s_nc/notebooks/00_population_sample.ipynb`
+2. `s2s_nc/notebooks/01_coupling_and_fragility.ipynb`
+3. `s2s_nc/notebooks/02_construction_materials.ipynb`
+4. `s2s_nc/notebooks/03_defense.ipynb`
+5. `s2s_nc/notebooks/04_sen.ipynb`
+6. `s2s_nc/notebooks/05_rsen.ipynb`
+7. `s2s_nc/notebooks/06_carsen.ipynb`
 
+Run all notebooks in publication order with:
 
+```bash
+python scripts/run_s2s_nc.py
 ```
+
+For a faster installation check using fewer bootstrap and permutation draws:
+
+```bash
+python scripts/run_s2s_nc.py --smoke
+```
+
+Individual portions of the workflow can be selected with `--start` and
+`--stop`, using notebook indices 0 through 6.
+
+## Reproduction boundary
+
+The distributed inputs retain the building identifiers, geometries, exposure
+metrics and building-pair couplings required by the notebooks. The package does
+not distribute the original LARIAC source products or full patch-to-patch line-
+of-sight tables. Small figure-specific extracts are included where a publication
+figure requires patch-level geometry.
+
+All reported analyses should run without machine-specific paths or access to
+the author's local OpenView directories. Environment variables are optional
+overrides rather than requirements.
+
+## Outputs
+
+Generated tables are written under `results/`; figures are written under
+`figures/`. A small number of reusable spatial caches and figure-source tables
+are written under `data/derived/` beside their frozen inputs. All three output
+locations are ignored by Git so that the repository contains only code,
+documentation and lightweight metadata.
+
+## Citation and license
+
+Citation metadata are provided in `CITATION.cff`. See `LICENSE` for reuse terms.
