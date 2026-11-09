@@ -18,6 +18,8 @@ from src.paths import (  # noqa: E402
     OPENVIEW_CA_2D_RUN, OPENVIEW_FIRE_2D_RUN, REFERENCE_DIR,
 )
 
+FIGURE_2D_RUN = DATA_DIR / "derived" / "openview2d_eaton_scene"
+
 
 REQUIRED_PARQUET_COLUMNS = {
     DERIVED_3D / "analysis_openview3d.parquet": {
@@ -26,12 +28,28 @@ REQUIRED_PARQUET_COLUMNS = {
     },
     DERIVED_3D / "county_buildings.parquet": {"building_id", "geometry"},
     DERIVED_3D / "dins_openview3d.parquet": {"graph_id"},
+    DERIVED_3D / "distance_comparison_openview3d.parquet": {
+        "graph_id", "fire", "ccd_ft", "ssd_ft",
+    },
+    DERIVED_3D / "defense_openview3d_directed_edges.parquet": set(),
     OPENVIEW_3D_RUN / "building_ids.parquet": {"building_id"},
     OPENVIEW_3D_RUN / "building_edges.parquet": set(),
+    OPENVIEW_3D_RUN / "building_metrics.parquet": {"building_id"},
     OPENVIEW_FIRE_2D_RUN / "building_ids.parquet": {"building_id"},
     OPENVIEW_FIRE_2D_RUN / "building_edges.parquet": set(),
     OPENVIEW_CA_2D_RUN / "building_ids.parquet": {"building_id"},
     OPENVIEW_CA_2D_RUN / "building_edges.parquet": set(),
+    DATA_DIR / "derived" / "carsen_2d_vs_3d" /
+    "california_wui_all_3mi_osm_2d" /
+    "state_2d_buildings_in_county_3d_extent.parquet": {"building_id"},
+    DATA_DIR / "derived" / "carsen_2d_vs_3d" /
+    "california_wui_all_3mi_osm_2d" /
+    "county_3d_to_state_2d_building_crosswalk.parquet": {
+        "building_2d", "building_3d",
+    },
+    DATA_DIR / "derived" / "carsen_2d_vs_3d" /
+    "california_wui_all_3mi_osm_2d" /
+    "california_building_centroids_2d.parquet": {"building_id", "x", "y"},
     REFERENCE_DIR / "california_interface_intermix_influence_75m.parquet": {
         "WUI_DESC", "Shape",
     },
@@ -47,14 +65,23 @@ REQUIRED_PARQUET_COLUMNS = {
 }
 
 REQUIRED_FILES = (
+    DATA_DIR / "analysis.parquet",
+    DATA_DIR / "buildings_enriched.parquet",
+    DATA_DIR / "radex.parquet",
     DATA_DIR / "calfire_wui_la.gpkg",
+    DATA_DIR / "enrichment" / "dins.parquet",
     DATA_DIR / "nx" / "fire_perims.parquet",
+    DATA_DIR / "nx" / "EATON_buildings.parquet",
+    DATA_DIR / "nx" / "PALISADES_buildings.parquet",
     DATA_DIR / "enrichment" / "vegetation.parquet",
     OPENVIEW_3D_RUN / "manifest.json",
     OPENVIEW_3D_PATCH_RUN / "manifest.json",
     OPENVIEW_3D_PATCH_RUN / "patch_exchange.parquet",
     OPENVIEW_FIRE_2D_RUN / "manifest.json",
     OPENVIEW_CA_2D_RUN / "manifest.json",
+    FIGURE_2D_RUN / "manifest.json",
+    FIGURE_2D_RUN / "building_metrics.parquet",
+    FIGURE_2D_RUN / "patch_exchange.parquet",
     REFERENCE_DIR / "cb_2025_us_state_500k.zip",
     REFERENCE_DIR / "la_county_mainland_boundary.parquet",
     REFERENCE_DIR / "natural_earth_hydro" / "ne_10m_ocean.shp",
@@ -73,7 +100,7 @@ REQUIRED_FILES = (
 
 REQUIRED_GLOBS = (
     (OPENVIEW_3D_PATCH_RUN / "patches", "*.parquet"),
-    (OPENVIEW_CA_2D_RUN / "patches", "*.parquet"),
+    (FIGURE_2D_RUN / "patches", "*.parquet"),
 )
 
 

@@ -33,7 +33,9 @@ python -m ipykernel install --user --name s2s-fire-reproduction \
 ## Obtain the data
 
 The frozen inputs are distributed separately through the
-[S2S reviewer data folder on Dropbox](https://www.dropbox.com/scl/fo/yvqj2aku2f2qhld70dyvh/AIZWOsbXFX0_8aAU-8MsElo?rlkey=g5ng7brlr1do807ti17e676q5&dl=0).
+[S2S reviewer data folder on Dropbox (missing large precomputed simulation)](https://www.dropbox.com/scl/fo/yvqj2aku2f2qhld70dyvh/AIZWOsbXFX0_8aAU-8MsElo?rlkey=g5ng7brlr1do807ti17e676q5&dl=0).
+
+[S2s reviwer data folder on Google Drive](https://drive.google.com/drive/folders/1aCRoydiUED1nizsZNtUuV94JBTXmZQV0?usp=drive_link)
 
 Download and extract the bundle into `data/`, preserving its directory
 structure. The download can also be initiated from the command line:
@@ -47,6 +49,10 @@ python scripts/validate_s2s_data.py
 The archive checksum will be added to the release record when the final data
 bundle is frozen. Until then, `download_data.py` prints a warning when run
 without an expected SHA-256 digest.
+
+For maintainers, the curated Dropbox directory can be rebuilt from the local
+working products with `python scripts/build_data_bundle.py`, followed by
+`python scripts/build_data_manifest.py --data-dir data`.
 
 Large data may be stored outside the repository:
 

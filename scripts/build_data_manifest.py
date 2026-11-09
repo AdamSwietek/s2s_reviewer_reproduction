@@ -38,7 +38,11 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=("path", "bytes", "sha256"))
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=("path", "bytes", "sha256"),
+            lineterminator="\n",
+        )
         writer.writeheader()
         for index, path in enumerate(files, 1):
             print(f"[{index}/{len(files)}] {path.relative_to(data_dir)}", flush=True)
